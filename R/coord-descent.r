@@ -1,4 +1,5 @@
 coord_descent <- function(z, lambda, max_iters = 100, w_init = NULL) {
+  cat("===coord descent\n")
   n <- nrow(z)
   p <- ncol(z)
 
@@ -10,8 +11,9 @@ coord_descent <- function(z, lambda, max_iters = 100, w_init = NULL) {
   }
 
   # initialize cost vector
+  logh <- -z %*% w
   h <- exp(-z %*% w)
-  cat(sprintf("[initial] loss: %0.03f l0: %i\n", mean(h), sum(w != 0)))
+  cat(sprintf("  [initial] loss: %0.03f l0: %i\n", mean(h), sum(w != 0)))
 
   # update coefficients
   for (iter in seq_len(max_iters)) {
@@ -19,9 +21,9 @@ coord_descent <- function(z, lambda, max_iters = 100, w_init = NULL) {
 
     # loop over every feature
     for (j in seq_along(w)) {
-      out <- update_coef(w[j], j, z[,j], h, lambda)
+      out <- update_coef(w[j], j, z[,j], logh, lambda)
       w[j] <- out$wj
-      h <- out$h
+      logh <- out$logh
     }
 
     # check if we can break
@@ -29,17 +31,19 @@ coord_descent <- function(z, lambda, max_iters = 100, w_init = NULL) {
     if (max_diff <= 1E-8) break
   }
 
-  cat(sprintf("[final] %0.03f loss: %0.03f l0: %i\n", max_diff, mean(h), sum(w != 0)))
+  h <- exp(logh)
+  H <- mean(h)
+  cat(sprintf("  [final] loss: %0.03f l0: %i\n", H, sum(w != 0)))
 
   # return results
-  w
+  list(w = w, logh = logh)
 }
 
-update_coef <- function(wj, j, zj, h, lambda) {
-  #zj <- z[,j]
+update_coef <- function(wj, j, zj, logh, lambda) {
   neg_idx <- zj == -1
 
   # current total cost
+  h <- exp(logh)
   H <- mean(h)
 
   # calculate auxillary variables
@@ -53,11 +57,9 @@ update_coef <- function(wj, j, zj, h, lambda) {
 
   # compare to setting wj -> 0
   wj_zero <- 0
-  H_zero <- H + (1 - h[j])/length(h)
-  #H_zero <- mean(h[-j]) # this is not correct
+  H_zero <- H*(exp(wj)*(1 - d) + exp(-wj)*d)
 
   # check if it is good enough to update
-  #loss <- H + lambda*(wj != 0)
   loss_new <- H_new + lambda*(wj_new != 0)
   loss_zero <- H_zero
 
@@ -68,9 +70,9 @@ update_coef <- function(wj, j, zj, h, lambda) {
   }
 
   # update h
-  h[neg_idx] <- h[neg_idx]*exp(wj_best - wj)
-  h[!neg_idx] <- h[!neg_idx]*exp(wj - wj_best)
+  logh[neg_idx] <- logh[neg_idx] + wj_best - wj
+  logh[!neg_idx] <- logh[!neg_idx] + wj - wj_best
 
   # return results
-  list(wj = wj_best, h = h)
+  list(wj = wj_best, logh = logh)
 }

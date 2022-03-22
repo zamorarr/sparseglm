@@ -1,9 +1,15 @@
-swap_features <- function(w, z) {
+swap_features <- function(w, z, lambda) {
+  cat("===swapping\n")
   # initialize support
   in_support <- w != 0
 
   # initialize failed swap counts
-  swaps_fails <- rep(0L, length(w))
+  swap_fails <- rep(0L, length(w))
+
+  # initialize cost vector
+  logh <- -z %*% w
+  h <- exp(-z %*% w)
+  cat(sprintf("  [initial] loss: %0.03f l0: %i\n", mean(h), sum(w != 0)))
 
   # loop until no more swaps
   while(TRUE) {
@@ -14,11 +20,12 @@ swap_features <- function(w, z) {
     # loop over features in support index
     for (j in support_idx) {
       # try and swap
-      out <- delete_or_swap(w, j, z, in_support, lambda)
+      out <- delete_or_swap(w, j, z, logh, lambda, in_support)
 
       if (out$is_swap) {
         # swap completed
         w <- out$w
+        logh <- out$logh
         in_support <- out$in_support
         break
       } else {
@@ -28,80 +35,69 @@ swap_features <- function(w, z) {
     }
 
     # iterated over all features without a swap
-    return(w)
+    h <- exp(logh)
+    H <- mean(h)
+    cat(sprintf("  [final] loss: %0.03f l0: %i\n", H, sum(w != 0)))
+    return(list(w = w, logh = logh))
   }
 }
 
-delete_or_swap <- function(w, j, z, in_support, lambda) {
+delete_or_swap <- function(w, j, z, logh, lambda, in_support) {
   # calculate current loss
-  loss_current <- loss_exponential2(w, z) + lambda*(sum(w != 0))
+  h <- exp(logh)
+  H <- mean(h)
+  l0 <- sum(in_support)
+  wj <- w[j]
+
+  # calculate auxillary variables
+  neg_idx <- z[,j] == -1
+  d <- sum(h[neg_idx])/sum(h)
+  eps <- 1E-9
+  d <- clamp(d, eps, 1 - eps)
 
   # try removing j
-  w_new <- w
-  w_new[j] <- 0
-  loss_remove <- loss_exponential2(w_new, z) + lambda*(sum(w_new != 0))
+  w_zero <- w
+  w_zero[j] <- 0
+  H_zero <- H*(exp(wj)*(1 - d) + exp(-wj)*d)
+  logh_zero <- logh
+  logh_zero[neg_idx] <- logh_zero[neg_idx] + 0 - wj
+  logh_zero[!neg_idx] <- logh_zero[!neg_idx] + wj - 0
 
-  if (loss_remove < loss_current) {
-    w <- w_new
+  if (H_zero < (H + lambda)) {
     in_support[j] <- FALSE
-    out <- list(w = w, in_support = in_support, is_swap = TRUE)
+    out <- list(w = w_zero, logh = logh_zero, in_support = in_support, is_swap = TRUE)
     return(out)
   }
 
   # try swapping j with something not in support?
+  j_swaps <- which(!in_support)
+  j_swaps <- sample(j_swaps, length(j_swaps))
 
-}
+  out_swaps <- lapply(j_swaps, function(j_swap) update_coef(w_zero[j_swap], j_swap, z[,j_swap], logh_zero, lambda))
+  H_swaps <- vapply(out_swaps, function(out) mean(exp(out$logh)), double(1))
+  best_idx <- which.min(H_swaps)[1]
+  H_swap <- H_swaps[best_idx]
 
-update_w <- function(x, y, s) {
-  num_features <- ncol(x)
-  model <- lm(y ~ . - 1, data = x[,s])
-  w <- unname(coef(model))
-  w2 <- double(num_features)
-  w2[s] <- w
-  return(w2)
-}
+  if (H_swap < H) {
+    wj_swap <- out_swaps[[best_idx]]$wj
+    j_swap <- j_swaps[[best_idx]]
 
-delete_or_swap2 <- function(w, j, s, sc, x, y) {
-  # calculate best current loss
-  loss <- function(w, x, y) loss_logistic(w, x, y) + 0.001*sum(w^2)
-  Lbest <- loss(w, x, y)
+    w_swap <- w_zero
+    w_swap[j_swap] <- wj_swap
 
-  # create new candidate solution by dropping feature j
-  w2 <- w
-  w2[j] <- 0
+    neg_idx <- z[,j_swap] == -1
+    logh_swap <- logh_zero
+    logh_swap[neg_idx] <- logh_swap[neg_idx] + wj_swap - 0
+    logh_swap[!neg_idx] <- logh_swap[!neg_idx] + 0 - wj_swap
 
-  # if loss is better w/o feature j
-  if (loss(w2, x, y) <= Lbest) {
-    # update support
-    s2 <- s[s != j]
+    in_support[j] <- FALSE
+    in_support[j_swap] <- TRUE
 
-    # recalculate w2
-    w2 <- update_w(x, y, s2)
-    return(w2)
+    cat(sprintf("swapping %i with %i\n", j, j_swap))
+
+    return(list(w = w_swap, logh = logh_swap, in_support = in_support, is_swap = TRUE))
   }
 
-  # if sc is empty, nothing else to check
-  if (length(sc) < 1) return(w)
-
-  # calcuate gradient on sc.
-  grad <- grad_logistic(w, x, y)
-  grad_sc <- grad[sc]
-  grad_sc_order <- order(abs(grad_sc), decreasing = TRUE)
-
-  for (j3 in grad_sc_order) {
-    w3 <- linear_cut(w2, j3, Lbest)
-    # if w and w2 are different
-    if (any(w2 != w3)) {
-      # update support
-      s3 <- s[s != j]
-      s3 <- sort(c(s, j3))
-
-      # recalculate w
-      w3 <- update_w(x, y, s3)
-      return(w3)
-    }
-  }
-
-  # return w
-  w
+  # no removal, no swaps
+  return(list(w = w, logh = logh, in_support = in_support, is_swap = FALSE))
 }
