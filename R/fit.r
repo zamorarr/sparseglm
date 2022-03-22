@@ -21,7 +21,10 @@ sparseglm <- function(x, y, lambda = 1E-3, max_iters = 100) {
 
     #max_diff <- max(abs(w - w_swap))
     #is_done <- max_diff <= 1E-7
-    is_done <- loss - loss_swap <= 1E-3
+    abs_tol <- loss - loss_swap
+    rel_tol <- 1 - loss_swap/loss
+    cat(sprintf("reltol: %0.6f abstol: %0.9f\n", rel_tol, abs_tol))
+    is_done <- abs_tol <= 1E-9 || rel_tol <= 1E-6
     if (is_done) break
     #print(w - w_swap)
   }
