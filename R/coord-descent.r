@@ -1,47 +1,50 @@
-coord_descent <- function(z, lambda, max_iters = 100, w_init = NULL) {
+coord_descent <- function(w, z, lambda, max_iters = 100) {
   cat("===coord descent\n")
-  n <- nrow(z)
-  p <- ncol(z)
 
-  # initialize coefficient vector
-  if (is.null(w_init)) {
-    w <- runif(p, min = -1, max = 1)
-  } else {
-    w <- w_init
-  }
+  # negative values of zj (the margin)
+  neg_idx <- z == -1
 
   # initialize cost vector
   logh <- -z %*% w
-  h <- exp(-z %*% w)
-  cat(sprintf("  [initial] loss: %0.03f l0: %i\n", mean(h), sum(w != 0)))
+
+  # calculate initial loss
+  h <- exp(logh)
+  H <- mean(h)
+  l0 <- sum(w != 0)
+  loss <- H + lambda*l0
+  cat(sprintf("  [initial] loss: %0.03f l0: %i\n", loss, l0))
 
   # update coefficients
   for (iter in seq_len(max_iters)) {
-    w_old <- w
+    loss_old <- loss
 
     # loop over every feature
     for (j in seq_along(w)) {
-      out <- update_coef(w[j], j, z[,j], logh, lambda)
-      w[j] <- out$wj
-      logh <- out$logh
+      delta_j <- update_coef(w[j], j, neg_idx[,j], logh, lambda)
+      w[j] <- w[j] + delta_j
+      logh <- update_logh(logh, neg_idx[,j], delta_j)
     }
 
+    # calculate loss
+    H <- mean(exp(logh))
+    l0 <- sum(w != 0)
+    loss <- H + lambda*l0
+
     # check if we can break
-    max_diff <- max(abs(w - w_old))
-    if (max_diff <= 1E-8) break
+    abs_tol <- loss_old - loss
+    rel_tol <- 1 - loss/loss_old
+    is_done <- abs_tol <= 1E-9 || rel_tol <= 1E-6
+    if (is_done) break
   }
 
-  h <- exp(logh)
-  H <- mean(h)
-  cat(sprintf("  [final] loss: %0.03f l0: %i\n", H, sum(w != 0)))
+  cat(sprintf("  [final] loss: %0.03f l0: %i\n", loss, l0))
+  cat(sprintf("  finished at %i iterations\n", iter))
 
   # return results
   list(w = w, logh = logh)
 }
 
-update_coef <- function(wj, j, zj, logh, lambda) {
-  neg_idx <- zj == -1
-
+update_coef <- function(wj, j, neg_idx, logh, lambda) {
   # current total cost
   h <- exp(logh)
   H <- mean(h)
@@ -69,10 +72,12 @@ update_coef <- function(wj, j, zj, logh, lambda) {
     wj_best <- wj_zero
   }
 
-  # update h
-  logh[neg_idx] <- logh[neg_idx] + wj_best - wj
-  logh[!neg_idx] <- logh[!neg_idx] + wj - wj_best
+  # return change
+  wj_best - wj
+}
 
-  # return results
-  list(wj = wj_best, logh = logh)
+update_logh <- function(logh, neg_idx, delta) {
+  logh[neg_idx] <- logh[neg_idx] + delta
+  logh[!neg_idx] <- logh[!neg_idx] - delta
+  logh
 }

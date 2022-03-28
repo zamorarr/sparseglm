@@ -1,3 +1,4 @@
+# my swap loss returned is not matching up with mean(exp(-z %*% w))?
 swap_features <- function(w, z, lambda) {
   cat("===swapping\n")
   # initialize support
@@ -8,8 +9,11 @@ swap_features <- function(w, z, lambda) {
 
   # initialize cost vector
   logh <- -z %*% w
-  h <- exp(-z %*% w)
-  cat(sprintf("  [initial] loss: %0.03f l0: %i\n", mean(h), sum(w != 0)))
+  h <- exp(logh)
+  H <- mean(h)
+  l0 <- sum(w != 0)
+  loss <- H + lambda*l0
+  cat(sprintf("  [initial] loss: %0.03f l0: %i\n", loss, l0))
 
   # loop until no more swaps
   while(TRUE) {
@@ -37,7 +41,9 @@ swap_features <- function(w, z, lambda) {
     # iterated over all features without a swap
     h <- exp(logh)
     H <- mean(h)
-    cat(sprintf("  [final] loss: %0.03f l0: %i\n", H, sum(w != 0)))
+    l0 <- sum(w != 0)
+    loss <- H + lambda*l0
+    cat(sprintf("  [final] loss: %0.03f l0: %i\n", loss, l0))
     return(list(w = w, logh = logh))
   }
 }
@@ -73,7 +79,18 @@ delete_or_swap <- function(w, j, z, logh, lambda, in_support) {
   j_swaps <- which(!in_support)
   j_swaps <- sample(j_swaps, length(j_swaps))
 
-  out_swaps <- lapply(j_swaps, function(j_swap) update_coef(w_zero[j_swap], j_swap, z[,j_swap], logh_zero, lambda))
+  out_swaps <- lapply(j_swaps, function(j) {
+    wj <- w_zero[j]
+    neg_idx <- z[,j] == -1
+
+    delta_j <- update_coef(wj, j, neg_idx, logh_zero, lambda)
+
+    wj <- wj + delta_j
+    logh <- update_logh(logh_zero, neg_idx, delta_j)
+
+    list(wj = wj, logh = logh)
+  })
+
   H_swaps <- vapply(out_swaps, function(out) mean(exp(out$logh)), double(1))
   best_idx <- which.min(H_swaps)[1]
   H_swap <- H_swaps[best_idx]
@@ -93,7 +110,7 @@ delete_or_swap <- function(w, j, z, logh, lambda, in_support) {
     in_support[j] <- FALSE
     in_support[j_swap] <- TRUE
 
-    cat(sprintf("swapping %i with %i\n", j, j_swap))
+    cat(sprintf("  swapping %i with %i\n", j, j_swap))
 
     return(list(w = w_swap, logh = logh_swap, in_support = in_support, is_swap = TRUE))
   }
