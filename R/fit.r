@@ -27,14 +27,14 @@ sparseglm_fit <- function(z, lambda, max_iters = 100, w_init = NULL) {
     # 1. coordinate descent
     out <- coord_descent(w_swap, z, lambda, max_iters = max_iters)
     w <- out$w
-    logh <- out$logh
-    loss <- mean(exp(logh)) + lambda*(sum(w != 0))
+    h <- out$h
+    loss <- mean(h) + lambda*n_nzcoef(w)
 
     # 2. swap features
     out <- swap_features(w, z, lambda)
     w_swap <- out$w
-    logh_swap <- out$logh
-    loss_swap <- mean(exp(logh_swap)) + lambda*(sum(w_swap != 0))
+    h_swap <- out$h
+    loss_swap <- mean(h_swap) + lambda*n_nzcoef(w_swap)
 
     # 3. check stopping criteria
     abs_tol <- loss - loss_swap
@@ -45,7 +45,12 @@ sparseglm_fit <- function(z, lambda, max_iters = 100, w_init = NULL) {
   }
 
   # return output object
-  output <- list(w = w, names = colnames(z), loss = loss, l0 = sum(w != 0), lambda = lambda)
+  output <- list(
+    w = w,
+    names = colnames(z),
+    loss = loss,
+    l0 = n_nzcoef(w),
+    lambda = lambda)
   structure(output, class = c("sparseglm_fit", class(output)))
 }
 

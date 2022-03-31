@@ -10,8 +10,10 @@ swap_features <- function(w, z, lambda) {
   # initialize cost vector
   logh <- -z %*% w
   h <- exp(logh)
+
+  # calculate loss
   H <- mean(h)
-  l0 <- sum(w != 0)
+  l0 <- n_nzcoef(w)
   loss <- H + lambda*l0
   cat(sprintf("  [initial] loss: %0.03f l0: %i\n", loss, l0))
 
@@ -23,14 +25,18 @@ swap_features <- function(w, z, lambda) {
 
     # loop over features in support index
     for (j in support_idx) {
+      # never swap the intercept
+      if (j == 1) next
+
       # try and swap
-      out <- delete_or_swap(w, j, z, logh, lambda, in_support)
+      out <- delete_or_swap(w, j, z, h, H, lambda, in_support)
 
       if (out$is_swap) {
         # swap completed
         w <- out$w
-        logh <- out$logh
-        in_support <- out$in_support
+        h <- out$h
+        H <- out$H
+        in_support <- which(w != 0)
         break
       } else {
         # swap failed
@@ -39,82 +45,60 @@ swap_features <- function(w, z, lambda) {
     }
 
     # iterated over all features without a swap
-    h <- exp(logh)
-    H <- mean(h)
-    l0 <- sum(w != 0)
+    l0 <- n_nzcoef(w)
     loss <- H + lambda*l0
     cat(sprintf("  [final] loss: %0.03f l0: %i\n", loss, l0))
-    return(list(w = w, logh = logh))
+    return(list(w = w, h = h, H = H))
   }
 }
 
-delete_or_swap <- function(w, j, z, logh, lambda, in_support) {
+delete_or_swap <- function(w, j, z, h, H, lambda, in_support) {
   # calculate current loss
-  h <- exp(logh)
-  H <- mean(h)
-  l0 <- sum(in_support)
+  l0 <- n_nzcoef(w)
   wj <- w[j]
 
   # calculate auxillary variables
   neg_idx <- z[,j] == -1
-  d <- sum(h[neg_idx])/sum(h)
-  eps <- 1E-9
-  d <- clamp(d, eps, 1 - eps)
+  d <- compute_d(h, neg_idx)
 
   # try removing j
   w_zero <- w
   w_zero[j] <- 0
-  H_zero <- H*(exp(wj)*(1 - d) + exp(-wj)*d)
-  logh_zero <- logh
-  logh_zero[neg_idx] <- logh_zero[neg_idx] + 0 - wj
-  logh_zero[!neg_idx] <- logh_zero[!neg_idx] + wj - 0
+  H_zero <- update_H(H, d, -wj)
+  h_zero <- update_h(h, neg_idx, -wj)
 
   if (H_zero < (H + lambda)) {
-    in_support[j] <- FALSE
-    out <- list(w = w_zero, logh = logh_zero, in_support = in_support, is_swap = TRUE)
+    cat(sprintf("  zeroing %i\n", j))
+    out <- list(w = w_zero, h = h_zero, H = H_zero, is_swap = TRUE)
     return(out)
   }
 
   # try swapping j with something not in support?
   j_swaps <- which(!in_support)
-  j_swaps <- sample(j_swaps, length(j_swaps))
-
   out_swaps <- lapply(j_swaps, function(j) {
     wj <- w_zero[j]
     neg_idx <- z[,j] == -1
 
-    delta_j <- update_coef(wj, j, neg_idx, logh_zero, lambda)
-
-    wj <- wj + delta_j
-    logh <- update_logh(logh_zero, neg_idx, delta_j)
-
-    list(wj = wj, logh = logh)
+    # update coef
+    update_coef(wj, neg_idx, h_zero, H_zero, lambda)
   })
 
-  H_swaps <- vapply(out_swaps, function(out) mean(exp(out$logh)), double(1))
+  # find best swap
+  H_swaps <- vapply(out_swaps, function(out) out$H, double(1))
   best_idx <- which.min(H_swaps)[1]
   H_swap <- H_swaps[best_idx]
 
+  # swap has lower loss
   if (H_swap < H) {
-    wj_swap <- out_swaps[[best_idx]]$wj
     j_swap <- j_swaps[[best_idx]]
-
     w_swap <- w_zero
-    w_swap[j_swap] <- wj_swap
-
-    neg_idx <- z[,j_swap] == -1
-    logh_swap <- logh_zero
-    logh_swap[neg_idx] <- logh_swap[neg_idx] + wj_swap - 0
-    logh_swap[!neg_idx] <- logh_swap[!neg_idx] + 0 - wj_swap
-
-    in_support[j] <- FALSE
-    in_support[j_swap] <- TRUE
+    w_swap[j_swap] <- out_swaps[[best_idx]]$wj
+    h_swap <- out_swaps[[best_idx]]$h
 
     cat(sprintf("  swapping %i with %i\n", j, j_swap))
-
-    return(list(w = w_swap, logh = logh_swap, in_support = in_support, is_swap = TRUE))
+    return(list(w = w_swap, h = h_swap, H = H_swap, is_swap = TRUE))
   }
 
   # no removal, no swaps
-  return(list(w = w, logh = logh, in_support = in_support, is_swap = FALSE))
+  return(list(w = w, h = h, H = H, is_swap = FALSE))
 }

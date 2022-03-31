@@ -6,11 +6,11 @@ coord_descent <- function(w, z, lambda, max_iters = 100) {
 
   # initialize cost vector
   logh <- -z %*% w
+  h <- exp(logh)
 
   # calculate initial loss
-  h <- exp(logh)
   H <- mean(h)
-  l0 <- sum(w != 0)
+  l0 <- n_nzcoef(w)
   loss <- H + lambda*l0
   cat(sprintf("  [initial] loss: %0.03f l0: %i\n", loss, l0))
 
@@ -20,14 +20,17 @@ coord_descent <- function(w, z, lambda, max_iters = 100) {
 
     # loop over every feature
     for (j in seq_along(w)) {
-      delta_j <- update_coef(w[j], j, neg_idx[,j], logh, lambda)
-      w[j] <- w[j] + delta_j
-      logh <- update_logh(logh, neg_idx[,j], delta_j)
+      wj <- w[j]
+      neg_j <- neg_idx[,j]
+      out <- update_coef(wj, neg_j, h, H, lambda, is_intercept = j == 1)
+
+      w[j] <- out$wj
+      h <- out$h
+      H <- out$H
     }
 
     # calculate loss
-    H <- mean(exp(logh))
-    l0 <- sum(w != 0)
+    l0 <- n_nzcoef(w)
     loss <- H + lambda*l0
 
     # check if we can break
@@ -41,43 +44,66 @@ coord_descent <- function(w, z, lambda, max_iters = 100) {
   cat(sprintf("  finished at %i iterations\n", iter))
 
   # return results
-  list(w = w, logh = logh)
+  list(w = w, h = h)
 }
 
-update_coef <- function(wj, j, neg_idx, logh, lambda) {
+update_coef <- function(wj, neg_idx, h, H, lambda, is_intercept = FALSE) {
   # current total cost
-  h <- exp(logh)
-  H <- mean(h)
+  #H <- mean(h)
 
   # calculate auxillary variables
-  d <- sum(h[neg_idx])/sum(h)
-  eps <- 1E-9
-  d <- clamp(d, eps, 1 - eps)
+  d <- compute_d(h, neg_idx)
 
   # candidate update
-  wj_new <- wj + 0.5*(log(1 - d) - log(d))
+  delta_new <- 0.5*(log(1 - d) - log(d))
   H_new <- 2*H*sqrt(d*(1 - d))
 
   # compare to setting wj -> 0
-  wj_zero <- 0
-  H_zero <- H*(exp(wj)*(1 - d) + exp(-wj)*d)
+  delta_zero <- -wj
+  H_zero <- update_H(H, d, delta_zero)
 
   # check if it is good enough to update
-  loss_new <- H_new + lambda*(wj_new != 0)
+  loss_new <- H_new + lambda*(!is_intercept)
   loss_zero <- H_zero
 
+  # return best
   if (loss_new < loss_zero) {
-    wj_best <- wj_new
+    h_new <- update_h(h, neg_idx, delta_new)
+    list(wj = wj + delta_new, H = H_new, h = h_new)
   } else {
-    wj_best <- wj_zero
+    h_zero <- update_h(h, neg_idx, delta_zero)
+    list(wj = wj + delta_zero, H = H_zero, h = h_zero)
   }
+}
 
-  # return change
-  wj_best - wj
+compute_d <- function(h, neg_idx) {
+  d <- sum(h[neg_idx])/sum(h)
+  #numerator <- 0
+  #denominator <- 0
+  #for (i in seq_along(h)) {
+  #  hi <- h[i]
+  #  if (neg_idx[i]) numerator <- numerator + hi
+  #  denominator <- denominator + hi
+  #}
+  #d <- numerator/denominator
+
+  eps <- 1E-9
+  d <- clamp(d, eps, 1 - eps)
+}
+
+update_H <- function(H, d, delta) {
+  H*(exp(-delta)*(1 - d) + exp(delta)*d)
 }
 
 update_logh <- function(logh, neg_idx, delta) {
-  logh[neg_idx] <- logh[neg_idx] + delta
-  logh[!neg_idx] <- logh[!neg_idx] - delta
-  logh
+  #logh[neg_idx] <- logh[neg_idx] + delta
+  #logh[!neg_idx] <- logh[!neg_idx] - delta
+  logh + delta*(2*neg_idx - 1)
 }
+
+update_h <- function(h, neg_idx, delta) {
+  h*exp(delta*(2*neg_idx - 1))
+}
+
+n_nzcoef <- function(w) sum(w[-1] != 0)
+
