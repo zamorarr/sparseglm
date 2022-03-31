@@ -4,7 +4,7 @@
 \alias{sparseglm}
 \title{Create SparseGLM model}
 \usage{
-sparseglm(x, y, lambda = 0.001, max_iters = 100)
+sparseglm(x, y, lambdas = 10^seq(-3, -1), max_iters = 100)
 }
 \description{
 Create SparseGLM model

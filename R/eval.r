@@ -48,3 +48,34 @@ eval_recall <- function(model, x, y, threshold = 0.5) {
     n_correct/n
   }, double(1))
 }
+
+eval_cal <- function(model, x, y, grouped = FALSE) {
+  # get predictions
+  prob <- predict(model, x, type = "response")
+
+  # bin predictions
+  bins <- round(prob*10)/10
+
+  # create data frame
+  df <- tibble::tibble(predicted = prob, bins = bins, y = 0.5*(y + 1))
+  df <- df %>%
+    dplyr::group_by(.data$bins) %>%
+    dplyr::mutate(
+      observed = mean(y),
+      cal = abs(predicted - observed)) %>%
+    dplyr::summarize(
+      predicted = mean(predicted),
+      observed = mean(observed),
+      cal = sum(cal),
+      n = dplyr::n()) %>%
+    dplyr::ungroup()
+
+  if (!grouped) {
+    df %>%
+      dplyr::summarize(cal = sum(cal)/sum(n)) %>%
+      dplyr::pull(cal)
+  } else {
+    df %>%
+      dplyr::mutate(cal = cal/n)
+  }
+}
