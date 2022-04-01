@@ -77,16 +77,8 @@ update_coef <- function(wj, neg_idx, h, H, lambda, is_intercept = FALSE) {
 }
 
 compute_d <- function(h, neg_idx) {
-  d <- sum(h[neg_idx])/sum(h)
-  #numerator <- 0
-  #denominator <- 0
-  #for (i in seq_along(h)) {
-  #  hi <- h[i]
-  #  if (neg_idx[i]) numerator <- numerator + hi
-  #  denominator <- denominator + hi
-  #}
-  #d <- numerator/denominator
-
+  #d <- sum(h[neg_idx])/sum(h)
+  d <- sum(h*neg_idx)/sum(h)
   eps <- 1E-9
   d <- clamp(d, eps, 1 - eps)
 }

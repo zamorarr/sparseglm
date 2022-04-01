@@ -18,3 +18,8 @@ Depends:
 LazyData: true
 URL: https://github.com/zamorarr/sparseglm
 BugReports: https://github.com/zamorarr/sparseglm/issues
+LinkingTo: 
+    RcppArmadillo,
+    Rcpp
+Imports: 
+    Rcpp

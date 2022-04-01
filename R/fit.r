@@ -7,7 +7,7 @@ sparseglm <- function(x, y, lambdas = 10^seq(-3, -1), max_iters = 100) {
   w_init <- rep(0, ncol(x))
 
   for (i in seq_along(lambdas)) {
-    cat("lambda: ", lambdas[i], "\n")
+    cat("----lambda: ", lambdas[i], "\n")
     out[[i]] <- sparseglm_fit(z, lambda = lambdas[i], max_iters = max_iters, w_init = w_init)
     w_init <- out[[i]]$w
   }
@@ -26,6 +26,7 @@ sparseglm_fit <- function(z, lambda, max_iters = 100, w_init = NULL) {
   while(TRUE) {
     # 1. coordinate descent
     out <- coord_descent(w_swap, z, lambda, max_iters = max_iters)
+    #out <- coord_descent_cpp(w_swap, z, lambda, max_iters = max_iters)
     w <- out$w
     h <- out$h
     loss <- mean(h) + lambda*n_nzcoef(w)

@@ -33,8 +33,8 @@ plot_cal <- function(model, x, y) {
     ggplot2::labs(
       title = "Risk Calibration",
       subtitle = sprintf("calibration error: %0.3f", cal_val),
-      x = "predicted risk",
-      y = "observed risk") +
+      x = "predicted",
+      y = "observed") +
     ggplot2::theme_minimal()
 }
 
